@@ -20,7 +20,7 @@ CREATE TABLE "files" (
   "id"           BIGSERIAL PRIMARY KEY,
   "filename"     TEXT,
   "mime"         TEXT,
-  "created_ts"   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  "created_ts"   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "bucket_id"    BIGINT NOT NULL REFERENCES "buckets"("id") ON DELETE RESTRICT
 );
 

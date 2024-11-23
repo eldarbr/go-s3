@@ -80,7 +80,7 @@ WHERE "id" = $5
 	return nil
 }
 
-func (implTableBuckets) GetByID(ctx context.Context, querier database.Querier, id int64) (*model.Bucket, error) {
+func (implTableBuckets) GetByID(ctx context.Context, querier database.Querier, bucketID int64) (*model.Bucket, error) {
 	if querier == nil {
 		return nil, database.ErrNilArgument
 	}
@@ -98,7 +98,7 @@ WHERE "id" = $1
 
 	var dst model.Bucket
 
-	queryResult := querier.QueryRow(ctx, query, id)
+	queryResult := querier.QueryRow(ctx, query, bucketID)
 	err := queryResult.Scan(&dst.ID, &dst.Name, &dst.OwnerID, &dst.Availability, &dst.SizeQuota)
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -144,7 +144,7 @@ WHERE "name" = $1
 	return &dst, nil
 }
 
-func (implTableBuckets) DeleteByID(ctx context.Context, querier database.Querier, id int64) error {
+func (implTableBuckets) DeleteByID(ctx context.Context, querier database.Querier, bucketID int64) error {
 	if querier == nil {
 		return database.ErrNilArgument
 	}
@@ -154,7 +154,7 @@ DELETE FROM "buckets"
 WHERE "id" = $1
 	`
 
-	result, err := querier.Exec(ctx, query, id)
+	result, err := querier.Exec(ctx, query, bucketID)
 	if err != nil {
 		return fmt.Errorf("implTableBuckets.DeleteByID failed on DELETE: %w", err)
 	}
@@ -229,7 +229,7 @@ WHERE "id" = $4
 	return nil
 }
 
-func (implTableFiles) GetByID(ctx context.Context, querier database.Querier, id int64) (*model.File, error) {
+func (implTableFiles) GetByID(ctx context.Context, querier database.Querier, fileID int64) (*model.File, error) {
 	if querier == nil {
 		return nil, database.ErrNilArgument
 	}
@@ -247,7 +247,7 @@ WHERE "id" = $1
 
 	var dst model.File
 
-	queryResult := querier.QueryRow(ctx, query, id)
+	queryResult := querier.QueryRow(ctx, query, fileID)
 	err := queryResult.Scan(&dst.ID, &dst.Filename, &dst.MIME, &dst.CreatedTS, &dst.BucketID)
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -301,7 +301,7 @@ WHERE "bucket_id" = $1
 	return dst, nil
 }
 
-func (implTableFiles) DeleteByID(ctx context.Context, querier database.Querier, id int64) error {
+func (implTableFiles) DeleteByID(ctx context.Context, querier database.Querier, fileID int64) error {
 	if querier == nil {
 		return database.ErrNilArgument
 	}
@@ -311,7 +311,7 @@ DELETE FROM "files"
 WHERE "id" = $1
 	`
 
-	result, err := querier.Exec(ctx, query, id)
+	result, err := querier.Exec(ctx, query, fileID)
 	if err != nil {
 		return fmt.Errorf("implTableFiles.DeleteByID failed on DELETE: %w", err)
 	}

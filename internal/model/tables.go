@@ -25,6 +25,6 @@ type File struct {
 }
 
 const (
-	Closed     BucketAvailability = "closed"
-	Accessible BucketAvailability = "accessible"
+	BucketAvailabilityClosed     BucketAvailability = "closed"
+	BucketAvailabilityAccessible BucketAvailability = "accessible"
 )

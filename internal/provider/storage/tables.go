@@ -7,7 +7,12 @@ import (
 	"github.com/eldarbr/go-s3/internal/model"
 )
 
-type TableBuckets interface {
+func init() {
+	TableBuckets = implTableBuckets{}
+	TableFiles = implTableFiles{}
+}
+
+var TableBuckets interface {
 	Add(ctx context.Context, querier database.Querier, bucket *model.Bucket) error
 	UpdateByID(ctx context.Context, querier database.Querier, bucket *model.Bucket) error
 	// UpdateByName(ctx context.Context, querier database.Querier, bucket *model.Bucket, name string) error
@@ -17,7 +22,7 @@ type TableBuckets interface {
 	// DeleteByName(ctx context.Context, querier database.Querier, name string) error
 }
 
-type TableFiles interface {
+var TableFiles interface {
 	Add(ctx context.Context, querier database.Querier, file *model.File) error
 	UpdateByID(ctx context.Context, querier database.Querier, file *model.File) error
 	GetByID(ctx context.Context, querier database.Querier, id int64) (*model.File, error)
