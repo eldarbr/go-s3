@@ -175,13 +175,14 @@ func (implTableFiles) Add(ctx context.Context, querier database.Querier, file *m
 INSERT INTO "files"
   ("filename",
    "mime",
-   "bucket_id")
+   "bucket_id",
+   "access")
 VALUES
-  ($1, $2, $3)
+  ($1, $2, $3, $4)
 RETURNING "id", "created_ts"
 	`
 
-	queryResult := querier.QueryRow(ctx, query, file.Filename, file.MIME, file.BucketID)
+	queryResult := querier.QueryRow(ctx, query, file.Filename, file.MIME, file.BucketID, file.Access)
 	err := queryResult.Scan(&file.ID, &file.CreatedTS)
 
 	if err != nil && strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
@@ -209,11 +210,12 @@ UPDATE "files"
 SET
   "filename" = $1,
   "mime" = $2,
-  "bucket_id" = $3
-WHERE "id" = $4
+  "bucket_id" = $3,
+  "access" = $4
+WHERE "id" = $5
 	`
 
-	result, err := querier.Exec(ctx, query, file.Filename, file.MIME, file.BucketID, file.ID)
+	result, err := querier.Exec(ctx, query, file.Filename, file.MIME, file.BucketID, file.Access, file.ID)
 	if err != nil && strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
 		return database.ErrUniqueKeyViolation
 	}
@@ -240,7 +242,8 @@ SELECT
   "filename",
   "mime",
   "created_ts",
-  "bucket_id"
+  "bucket_id",
+  "access"
 FROM "files"
 WHERE "id" = $1
 	`
@@ -248,7 +251,7 @@ WHERE "id" = $1
 	var dst model.File
 
 	queryResult := querier.QueryRow(ctx, query, fileID)
-	err := queryResult.Scan(&dst.ID, &dst.Filename, &dst.MIME, &dst.CreatedTS, &dst.BucketID)
+	err := queryResult.Scan(&dst.ID, &dst.Filename, &dst.MIME, &dst.CreatedTS, &dst.BucketID, &dst.Access)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, database.ErrNoRows
@@ -273,7 +276,8 @@ SELECT
   "filename",
   "mime",
   "created_ts",
-  "bucket_id"
+  "bucket_id",
+  "access"
 FROM "files"
 WHERE "bucket_id" = $1
 	`
@@ -290,7 +294,8 @@ WHERE "bucket_id" = $1
 	}
 
 	dst, err = pgx.CollectRows(queryResult, func(row pgx.CollectableRow) (model.File, error) {
-		err = row.Scan(&nextDst.ID, &nextDst.Filename, &nextDst.MIME, &nextDst.CreatedTS, &nextDst.BucketID)
+		err = row.Scan(&nextDst.ID, &nextDst.Filename, &nextDst.MIME, &nextDst.CreatedTS,
+			&nextDst.BucketID, &nextDst.Access)
 
 		return nextDst, err //nolint:wrapcheck // not an actual return
 	})

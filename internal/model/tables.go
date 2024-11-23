@@ -8,6 +8,8 @@ import (
 
 type BucketAvailability string
 
+type FileAccess string
+
 type Bucket struct {
 	Name         string
 	Availability BucketAvailability
@@ -20,6 +22,7 @@ type File struct {
 	CreatedTS time.Time
 	Filename  string
 	MIME      string
+	Access    FileAccess
 	ID        int64
 	BucketID  int64
 }
@@ -27,4 +30,9 @@ type File struct {
 const (
 	BucketAvailabilityClosed     BucketAvailability = "closed"
 	BucketAvailabilityAccessible BucketAvailability = "accessible"
+)
+
+const (
+	FileAccessPrivate FileAccess = "private"
+	FileAccessPublic  FileAccess = "public"
 )

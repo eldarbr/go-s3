@@ -15,13 +15,19 @@ CREATE TABLE "buckets" (
   "size_quota"   DECIMAL NOT NULL
 );
 
+CREATE TYPE "file_access_enum" AS ENUM (
+  'private',
+  'public'
+);
+
 -- a file can only exist in a bucket, and only in one bucket.
 CREATE TABLE "files" (
   "id"           BIGSERIAL PRIMARY KEY,
   "filename"     TEXT,
   "mime"         TEXT,
   "created_ts"   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  "bucket_id"    BIGINT NOT NULL REFERENCES "buckets"("id") ON DELETE RESTRICT
+  "bucket_id"    BIGINT NOT NULL REFERENCES "buckets"("id") ON DELETE RESTRICT,
+  "access"       "file_access_enum" NOT NULL DEFAULT 'private'
 );
 
 COMMIT;

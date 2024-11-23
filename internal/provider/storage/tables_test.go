@@ -122,6 +122,7 @@ func TestTableFilesIntegration(t *testing.T) {
 		Filename: "testfile.txt",
 		MIME:     "text/plain",
 		BucketID: bucket.ID,
+		Access:   model.FileAccessPublic,
 	}
 	err = storage.TableFiles.Add(ctx, querier, file)
 
