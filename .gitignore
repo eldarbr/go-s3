@@ -3,6 +3,7 @@
 bin/
 secret/
 config.yaml
+sql
 
 ### go section
 
