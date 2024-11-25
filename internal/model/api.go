@@ -2,6 +2,7 @@ package model
 
 import (
 	"io"
+	"net/http"
 
 	"github.com/google/uuid"
 )
@@ -43,4 +44,12 @@ type UploadedFileInfo struct {
 
 type UploadFileResponse struct {
 	Results []UploadedFileInfo `json:"results"`
+}
+
+type FetchFileRequest struct {
+	RequestingUserID *uuid.UUID
+	RespWriter       http.ResponseWriter
+	RawRequest       *http.Request
+	BucketName       string
+	FileID           uuid.UUID
 }

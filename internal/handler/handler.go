@@ -21,6 +21,7 @@ type CacheImpl interface {
 type BusinessModule interface {
 	CreateBucket(ctx context.Context, bucket *model.Bucket) error
 	UploadFile(ctx context.Context, request model.UploadFileRequest) (*uuid.UUID, error)
+	FetchFile(ctx context.Context, request model.FetchFileRequest) error
 }
 
 type APIHandler struct {
@@ -276,6 +277,47 @@ func (apiHandler APIHandler) UploadFile(respWriter http.ResponseWriter, rawReque
 	writeJSONResponse(respWriter, response, http.StatusOK)
 }
 
-func (apiHandler APIHandler) GetFile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	writeJSONResponse(w, model.ErrorResponse{Error: "GetFile"}, http.StatusOK)
+func (apiHandler APIHandler) GetFile(respWriter http.ResponseWriter, rawRequest *http.Request, p httprouter.Params) {
+	var (
+		currentUserUUID *uuid.UUID
+	)
+
+	claims, err := apiHandler.jwtService.ValidateToken(rawRequest.Header.Get("Authorization"))
+	if err == nil {
+		uuid, uuidParseError := uuid.Parse(claims.UserID)
+		if uuidParseError != nil {
+			log.Println("bad uuid")
+			writeJSONResponse(respWriter, model.ErrorResponse{Error: "internal error"}, http.StatusInternalServerError)
+
+			return
+		}
+
+		currentUserUUID = &uuid
+	}
+
+	bucketName := p.ByName("bucket")
+
+	fileID, idParseErr := uuid.Parse(p.ByName("fileID"))
+	if idParseErr != nil {
+		log.Println("bad uuid")
+		writeJSONResponse(respWriter, model.ErrorResponse{Error: "bad request"}, http.StatusBadRequest)
+
+		return
+	}
+
+	fetchReq := model.FetchFileRequest{
+		BucketName:       bucketName,
+		FileID:           fileID,
+		RespWriter:       respWriter,
+		RequestingUserID: currentUserUUID,
+		RawRequest:       rawRequest,
+	}
+
+	err = apiHandler.business.FetchFile(rawRequest.Context(), fetchReq)
+	if err != nil {
+		log.Println(err.Error())
+		writeJSONResponse(respWriter, model.ErrorResponse{Error: err.Error()}, http.StatusBadRequest)
+
+		return
+	}
 }

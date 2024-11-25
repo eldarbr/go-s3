@@ -41,17 +41,8 @@ func (container Container) WriteFile(bucketID, fileID string, src io.Reader) (in
 	return written, err
 }
 
-func (container Container) ReadFile(bucketID, fileID string, dst io.Writer) error {
-	file, err := os.Open(path.Join(container.basePath, bucketID, fileID))
-	if err != nil {
-		return err
-	}
-
-	defer file.Close()
-
-	_, err = io.Copy(dst, file)
-
-	return err
+func (container Container) OpenFile(bucketID, fileID string) (io.ReadSeekCloser, error) {
+	return os.Open(path.Join(container.basePath, bucketID, fileID))
 }
 
 func (container Container) CreateFolder(bucketID string) error {
