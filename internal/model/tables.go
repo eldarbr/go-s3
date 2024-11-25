@@ -23,8 +23,9 @@ type File struct {
 	Filename  string
 	MIME      string
 	Access    FileAccess
-	ID        int64
+	ID        uuid.UUID
 	BucketID  int64
+	SizeBytes int64
 }
 
 const (

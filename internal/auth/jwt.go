@@ -24,7 +24,7 @@ type ClaimUserRole struct {
 	UserRole    string `json:"userRole"`
 }
 
-type AuthCustomClaims struct {
+type CustomClaims struct {
 	UserIdentificator
 	Roles []ClaimUserRole `json:"roles"`
 }
@@ -41,7 +41,7 @@ type ThisServiceUser struct {
 
 type myCompletelaims struct {
 	jwt.StandardClaims
-	AuthCustomClaims
+	CustomClaims
 }
 
 func NewJWTService(publicPath string) (*JWTService, error) {
@@ -60,7 +60,7 @@ func NewJWTService(publicPath string) (*JWTService, error) {
 	}, nil
 }
 
-func (jwtService *JWTService) ValidateToken(tokenString string) (*AuthCustomClaims, error) {
+func (jwtService *JWTService) ValidateToken(tokenString string) (*CustomClaims, error) {
 	if jwtService == nil {
 		return nil, myerrors.ErrServiceNullPtr
 	}
@@ -80,10 +80,10 @@ func (jwtService *JWTService) ValidateToken(tokenString string) (*AuthCustomClai
 		return nil, ErrWrongClaims
 	}
 
-	return &claims.AuthCustomClaims, nil
+	return &claims.CustomClaims, nil
 }
 
-func (claims AuthCustomClaims) FirstMatch(serviceName string, requestedRoles []string) string {
+func (claims CustomClaims) FirstMatch(serviceName string, requestedRoles []string) string {
 	var theServiceRole string
 
 	for _, role := range claims.Roles {

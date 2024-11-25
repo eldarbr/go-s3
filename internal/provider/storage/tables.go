@@ -5,8 +5,10 @@ import (
 
 	"github.com/eldarbr/go-auth/pkg/database"
 	"github.com/eldarbr/go-s3/internal/model"
+	"github.com/google/uuid"
 )
 
+//nolint:gochecknoinits // Set default implementations.
 func init() {
 	TableBuckets = implTableBuckets{}
 	TableFiles = implTableFiles{}
@@ -24,8 +26,9 @@ var TableBuckets interface {
 
 var TableFiles interface {
 	Add(ctx context.Context, querier database.Querier, file *model.File) error
+	InsertID(ctx context.Context, querier database.Querier, file *model.File) error
 	UpdateByID(ctx context.Context, querier database.Querier, file *model.File) error
-	GetByID(ctx context.Context, querier database.Querier, id int64) (*model.File, error)
+	GetByID(ctx context.Context, querier database.Querier, fileID uuid.UUID) (*model.File, error)
 	GetFilesOfABucket(ctx context.Context, querier database.Querier, bucketID int64) ([]model.File, error)
-	DeleteByID(ctx context.Context, querier database.Querier, id int64) error
+	DeleteByID(ctx context.Context, querier database.Querier, fileID uuid.UUID) error
 }

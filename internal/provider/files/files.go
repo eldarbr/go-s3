@@ -3,7 +3,6 @@ package files
 import (
 	"io"
 	"io/fs"
-	"log"
 	"os"
 	"path"
 )
@@ -22,25 +21,24 @@ func NewContainer(basePath string, fileMode, dirMode fs.FileMode) *Container {
 	}
 }
 
-func (container Container) WriteFile(bucketID, fileID string, src io.Reader) error {
+func (container Container) WriteFile(bucketID, fileID string, src io.Reader) (int64, error) {
 	fullPath := path.Join(container.basePath, bucketID, fileID)
-	log.Println(fullPath)
 
 	file, err := os.Create(fullPath)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	defer file.Close()
 
 	err = file.Chmod(container.fileMode)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	_, err = io.Copy(file, src)
+	written, err := io.Copy(file, src)
 
-	return err
+	return written, err
 }
 
 func (container Container) ReadFile(bucketID, fileID string, dst io.Writer) error {

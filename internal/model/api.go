@@ -22,6 +22,25 @@ type CreateBucketResponse struct {
 
 type UploadFileRequest struct {
 	FileContent io.Reader
+	BucketName  string
 	File
 	RequesterUUID uuid.UUID
+}
+
+type UploadResult string
+
+const (
+	UploadResultOk    = "ok"
+	UploadResultError = "error"
+)
+
+type UploadedFileInfo struct {
+	IDstr    string       `json:"id,omitempty"`
+	FileName string       `json:"name"`
+	Error    string       `json:"error,omitempty"`
+	Result   UploadResult `json:"result"`
+}
+
+type UploadFileResponse struct {
+	Results []UploadedFileInfo `json:"results"`
 }

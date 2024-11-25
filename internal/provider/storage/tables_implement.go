@@ -8,6 +8,7 @@ import (
 
 	"github.com/eldarbr/go-auth/pkg/database"
 	"github.com/eldarbr/go-s3/internal/model"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -176,13 +177,14 @@ INSERT INTO "files"
   ("filename",
    "mime",
    "bucket_id",
-   "access")
+   "access",
+   "size_bytes")
 VALUES
-  ($1, $2, $3, $4)
+  ($1, $2, $3, $4, $5)
 RETURNING "id", "created_ts"
 	`
 
-	queryResult := querier.QueryRow(ctx, query, file.Filename, file.MIME, file.BucketID, file.Access)
+	queryResult := querier.QueryRow(ctx, query, file.Filename, file.MIME, file.BucketID, file.Access, file.SizeBytes)
 	err := queryResult.Scan(&file.ID, &file.CreatedTS)
 
 	if err != nil && strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
@@ -200,22 +202,24 @@ RETURNING "id", "created_ts"
 	return nil
 }
 
-func (implTableFiles) UpdateByID(ctx context.Context, querier database.Querier, file *model.File) error {
+func (implTableFiles) InsertID(ctx context.Context, querier database.Querier, file *model.File) error {
 	if querier == nil || file == nil {
 		return database.ErrNilArgument
 	}
 
 	query := `
-UPDATE "files"
-SET
-  "filename" = $1,
-  "mime" = $2,
-  "bucket_id" = $3,
-  "access" = $4
-WHERE "id" = $5
+INSERT INTO "files"
+  ("id",
+	 "filename",
+   "mime",
+   "bucket_id",
+   "access",
+   "size_bytes")
+VALUES
+  ($1, $2, $3, $4, $5, $6)
 	`
 
-	result, err := querier.Exec(ctx, query, file.Filename, file.MIME, file.BucketID, file.Access, file.ID)
+	result, err := querier.Exec(ctx, query, file.ID, file.Filename, file.MIME, file.BucketID, file.Access, file.SizeBytes)
 	if err != nil && strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
 		return database.ErrUniqueKeyViolation
 	}
@@ -231,7 +235,39 @@ WHERE "id" = $5
 	return nil
 }
 
-func (implTableFiles) GetByID(ctx context.Context, querier database.Querier, fileID int64) (*model.File, error) {
+func (implTableFiles) UpdateByID(ctx context.Context, querier database.Querier, file *model.File) error {
+	if querier == nil || file == nil {
+		return database.ErrNilArgument
+	}
+
+	query := `
+UPDATE "files"
+SET
+  "filename" = $1,
+  "mime" = $2,
+  "bucket_id" = $3,
+  "access" = $4,
+  "size_bytes" = $5
+WHERE "id" = $6
+	`
+
+	result, err := querier.Exec(ctx, query, file.Filename, file.MIME, file.BucketID, file.Access, file.SizeBytes, file.ID)
+	if err != nil && strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
+		return database.ErrUniqueKeyViolation
+	}
+
+	if err != nil {
+		return fmt.Errorf("implTableFiles.UpdateByID failed on UPDATE: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return database.ErrNoRows
+	}
+
+	return nil
+}
+
+func (implTableFiles) GetByID(ctx context.Context, querier database.Querier, fileID uuid.UUID) (*model.File, error) {
 	if querier == nil {
 		return nil, database.ErrNilArgument
 	}
@@ -243,7 +279,8 @@ SELECT
   "mime",
   "created_ts",
   "bucket_id",
-  "access"
+  "access",
+  "size_bytes"
 FROM "files"
 WHERE "id" = $1
 	`
@@ -251,7 +288,7 @@ WHERE "id" = $1
 	var dst model.File
 
 	queryResult := querier.QueryRow(ctx, query, fileID)
-	err := queryResult.Scan(&dst.ID, &dst.Filename, &dst.MIME, &dst.CreatedTS, &dst.BucketID, &dst.Access)
+	err := queryResult.Scan(&dst.ID, &dst.Filename, &dst.MIME, &dst.CreatedTS, &dst.BucketID, &dst.Access, &dst.SizeBytes)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, database.ErrNoRows
@@ -277,7 +314,8 @@ SELECT
   "mime",
   "created_ts",
   "bucket_id",
-  "access"
+  "access",
+  "size_bytes"
 FROM "files"
 WHERE "bucket_id" = $1
 	`
@@ -295,7 +333,7 @@ WHERE "bucket_id" = $1
 
 	dst, err = pgx.CollectRows(queryResult, func(row pgx.CollectableRow) (model.File, error) {
 		err = row.Scan(&nextDst.ID, &nextDst.Filename, &nextDst.MIME, &nextDst.CreatedTS,
-			&nextDst.BucketID, &nextDst.Access)
+			&nextDst.BucketID, &nextDst.Access, &nextDst.SizeBytes)
 
 		return nextDst, err //nolint:wrapcheck // not an actual return
 	})
@@ -306,7 +344,7 @@ WHERE "bucket_id" = $1
 	return dst, nil
 }
 
-func (implTableFiles) DeleteByID(ctx context.Context, querier database.Querier, fileID int64) error {
+func (implTableFiles) DeleteByID(ctx context.Context, querier database.Querier, fileID uuid.UUID) error {
 	if querier == nil {
 		return database.ErrNilArgument
 	}

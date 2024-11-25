@@ -3,9 +3,10 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"log"
 	"net/http"
-	"strconv"
 
 	"github.com/eldarbr/go-s3/internal/auth"
 	"github.com/eldarbr/go-s3/internal/model"
@@ -19,7 +20,7 @@ type CacheImpl interface {
 
 type BusinessModule interface {
 	CreateBucket(ctx context.Context, bucket *model.Bucket) error
-	UploadFile(ctx context.Context, request model.UploadFileRequest) error
+	UploadFile(ctx context.Context, request model.UploadFileRequest) (*uuid.UUID, error)
 }
 
 type APIHandler struct {
@@ -211,22 +212,6 @@ func (apiHandler APIHandler) UploadFile(respWriter http.ResponseWriter, rawReque
 		return
 	}
 
-	part, err := mpReader.NextPart()
-	if err != nil {
-		log.Println("nextpart", err.Error())
-		writeJSONResponse(respWriter, model.ErrorResponse{Error: "bad request"}, http.StatusBadRequest)
-
-		return
-	}
-
-	bucketID, err := strconv.Atoi(p.ByName("bucket"))
-	if err != nil {
-		log.Println("atoi", err.Error())
-		writeJSONResponse(respWriter, model.ErrorResponse{Error: "bad request"}, http.StatusBadRequest)
-
-		return
-	}
-
 	var (
 		currentUserUUID uuid.UUID
 		uuidParseError  error
@@ -246,23 +231,49 @@ func (apiHandler APIHandler) UploadFile(respWriter http.ResponseWriter, rawReque
 		return
 	}
 
-	err = apiHandler.business.UploadFile(rawRequest.Context(), model.UploadFileRequest{
-		FileContent:   part,
-		RequesterUUID: currentUserUUID,
-		File: model.File{
-			BucketID: int64(bucketID),
-			Filename: part.FileName(),
-			Access:   model.FileAccessPrivate,
-		},
-	})
+	bucketName := p.ByName("bucket")
+	response := model.UploadFileResponse{}
 
-	if err != nil {
-		writeJSONResponse(respWriter, model.ErrorResponse{Error: err.Error()}, http.StatusInternalServerError)
+	for {
+		part, partErr := mpReader.NextPart()
+		if errors.Is(partErr, io.EOF) {
+			break
+		}
 
-		return
+		if partErr != nil {
+			log.Println("nextpart", partErr.Error())
+			writeJSONResponse(respWriter, model.ErrorResponse{Error: "internal error"}, http.StatusInternalServerError)
+
+			return
+		}
+
+		newFileUUID, saveErr := apiHandler.business.UploadFile(rawRequest.Context(), model.UploadFileRequest{
+			FileContent:   part,
+			RequesterUUID: currentUserUUID,
+			BucketName:    bucketName,
+			File: model.File{
+				Filename: part.FileName(),
+				Access:   model.FileAccessPrivate,
+				MIME:     part.Header.Get("Content-Type"),
+			},
+		})
+
+		newResult := model.UploadedFileInfo{
+			FileName: part.FileName(),
+		}
+
+		if saveErr != nil {
+			newResult.Result = model.UploadResultError
+			newResult.Error = saveErr.Error()
+		} else {
+			newResult.Result = model.UploadResultOk
+			newResult.IDstr = newFileUUID.String()
+		}
+
+		response.Results = append(response.Results, newResult)
 	}
 
-	writeJSONResponse(respWriter, model.ErrorResponse{Error: "ok"}, http.StatusOK)
+	writeJSONResponse(respWriter, response, http.StatusOK)
 }
 
 func (apiHandler APIHandler) GetFile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {

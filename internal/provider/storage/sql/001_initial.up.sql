@@ -22,12 +22,13 @@ CREATE TYPE "file_access_enum" AS ENUM (
 
 -- a file can only exist in a bucket, and only in one bucket.
 CREATE TABLE "files" (
-  "id"           BIGSERIAL PRIMARY KEY,
+  "id"           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   "filename"     TEXT,
   "mime"         TEXT,
   "created_ts"   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "bucket_id"    BIGINT NOT NULL REFERENCES "buckets"("id") ON DELETE RESTRICT,
-  "access"       "file_access_enum" NOT NULL DEFAULT 'private'
+  "access"       "file_access_enum" NOT NULL DEFAULT 'private',
+  "size_bytes"   BIGINT NOT NULL
 );
 
 COMMIT;

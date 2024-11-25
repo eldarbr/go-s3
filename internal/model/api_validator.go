@@ -9,9 +9,7 @@ const (
 	maxBucketNameLength = 30
 )
 
-var (
-	regexpValidBucketName = regexp.MustCompile(`^[A-z0-9-]+$`)
-)
+var regexpValidBucketName = regexp.MustCompile(`^[A-z0-9-]+$`)
 
 func (req CreateBucketRequest) Valid() bool {
 	nameLength := len(req.Name)

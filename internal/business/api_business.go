@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"github.com/eldarbr/go-auth/pkg/database"
 	"github.com/eldarbr/go-s3/internal/model"
 	"github.com/eldarbr/go-s3/internal/provider/storage"
+	"github.com/google/uuid"
 )
 
 type BusinessModule struct {
@@ -16,10 +18,16 @@ type BusinessModule struct {
 	fileStorage FileStorage
 }
 
+var (
+	ErrBadRequest   = errors.New("malformed request")
+	ErrNoPermission = errors.New("the user has no permissions")
+	ErrNoBucket     = errors.New("bucket not found")
+)
+
 type FileStorage interface {
 	CreateFolder(bucketID string) error
 	ReadFile(bucketID, fileID string, dst io.Writer) error
-	WriteFile(bucketID, fileID string, src io.Reader) error
+	WriteFile(bucketID, fileID string, src io.Reader) (int64, error)
 }
 
 func NewBusinessModule(dbInstance *database.Database, fileStorage FileStorage) *BusinessModule {
@@ -30,12 +38,12 @@ func NewBusinessModule(dbInstance *database.Database, fileStorage FileStorage) *
 }
 
 func (business BusinessModule) CreateBucket(ctx context.Context, bucket *model.Bucket) error {
-	tx, err := business.dbInstance.GetPool().Begin(ctx)
+	transaction, err := business.dbInstance.GetPool().Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("business.UploadFile begin tx: %w", err)
+		return fmt.Errorf("business.UploadFile begin transaction: %w", err)
 	}
 
-	defer tx.Rollback(ctx) //nolint:errcheck // won't check
+	defer transaction.Rollback(ctx) //nolint:errcheck // won't check
 
 	err = storage.TableBuckets.Add(ctx, business.dbInstance.GetPool(), bucket)
 	if err != nil {
@@ -47,32 +55,46 @@ func (business BusinessModule) CreateBucket(ctx context.Context, bucket *model.B
 		return fmt.Errorf("business.CreateBucket fileStorage.CreateFolder: %w", err)
 	}
 
-	err = tx.Commit(ctx)
+	err = transaction.Commit(ctx)
 
 	return err
 }
 
-func (business BusinessModule) UploadFile(ctx context.Context, request model.UploadFileRequest) error {
-	tx, err := business.dbInstance.GetPool().Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("business.UploadFile begin tx: %w", err)
+func (business BusinessModule) UploadFile(ctx context.Context, request model.UploadFileRequest) (*uuid.UUID, error) {
+	bucketInfo, err := storage.TableBuckets.GetByName(ctx, business.dbInstance.GetPool(), request.BucketName)
+	if errors.Is(err, database.ErrNoRows) {
+		return nil, ErrNoBucket
 	}
 
-	defer tx.Rollback(ctx) //nolint:errcheck // won't check
-
-	err = storage.TableFiles.Add(ctx, tx, &request.File)
 	if err != nil {
-		return fmt.Errorf("business.UploadFile TableFiles.Add: %w", err)
+		return nil, fmt.Errorf("business.TableBuckets.GetByName begin transaction: %w", err)
 	}
 
-	err = business.fileStorage.WriteFile(strconv.FormatInt(request.BucketID, 10),
-		strconv.FormatInt(request.File.ID, 10),
+	if bucketInfo.OwnerID != request.RequesterUUID {
+		return nil, ErrNoPermission
+	}
+
+	newFileUUID, uuidErr := uuid.NewRandom()
+	if uuidErr != nil {
+		return nil, fmt.Errorf("business.uuid.NewRandom: %w", uuidErr)
+	}
+
+	request.File.ID = newFileUUID
+	request.File.BucketID = bucketInfo.ID
+
+	bytesWritten, err := business.fileStorage.WriteFile(strconv.FormatInt(request.BucketID, 10),
+		request.File.ID.String(),
 		request.FileContent)
 	if err != nil {
-		return fmt.Errorf("business.UploadFile fileStorage.WriteFile: %w", err)
+		return nil, fmt.Errorf("business.UploadFile fileStorage.WriteFile: %w", err)
 	}
 
-	err = tx.Commit(ctx)
+	request.File.SizeBytes = bytesWritten
 
-	return err
+	err = storage.TableFiles.InsertID(ctx, business.dbInstance.GetPool(), &request.File)
+	if err != nil {
+		return nil, fmt.Errorf("business.UploadFile TableFiles.Add: %w", err)
+	}
+
+	return &newFileUUID, nil
 }
