@@ -46,7 +46,7 @@ func (business BusinessModule) CreateBucket(ctx context.Context, bucket *model.B
 
 	defer transaction.Rollback(ctx) //nolint:errcheck // won't check
 
-	err = storage.TableBuckets.Add(ctx, business.dbInstance.GetPool(), bucket)
+	err = storage.TableBuckets.Add(ctx, transaction, bucket)
 	if err != nil {
 		return fmt.Errorf("business.CreateBucket TableBuckets.Add: %w", err)
 	}
@@ -128,6 +128,7 @@ func (business BusinessModule) FetchFile(ctx context.Context, request model.Fetc
 	}
 
 	request.RespWriter.Header().Set("Content-Type", fileInfo.MIME)
+	request.RespWriter.Header().Set("Content-Disposition", "attachment; filename=" + fileInfo.Filename)
 
 	file, fileErr := business.fileStorage.OpenFile(strconv.FormatInt(bucketInfo.ID, 10), fileInfo.ID.String())
 	if fileErr != nil {

@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	defaultWriteTimeout = time.Second * 10
-	defaultReadTimeout  = time.Second * 10
+	defaultWriteTimeout = time.Second * 60
+	defaultReadTimeout  = time.Second * 60
 	defaultIdleTimeout  = time.Second * 20
 )
 
