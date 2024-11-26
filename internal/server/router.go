@@ -10,7 +10,6 @@ import (
 const myOwnServiceName = "go-s3"
 
 type APIHandlingModule interface {
-	MethodNotAllowed(w http.ResponseWriter, _ *http.Request)
 	NotFound(w http.ResponseWriter, _ *http.Request)
 	MiddlewareAuthorizeAnyClaim(requestedRoles []string, theServiceName string, next httprouter.Handle) httprouter.Handle
 	MiddlewareRateLimit(next httprouter.Handle) httprouter.Handle
@@ -35,8 +34,10 @@ func NewRouter(apiHandler APIHandlingModule) http.Handler {
 	handler := httprouter.New()
 
 	handler.HandleOPTIONS = false
+	handler.RedirectTrailingSlash = false
+	handler.HandleMethodNotAllowed = false
+	handler.RedirectFixedPath = false
 
-	handler.MethodNotAllowed = http.HandlerFunc(apiHandler.MethodNotAllowed)
 	handler.NotFound = http.HandlerFunc(apiHandler.NotFound)
 
 	// create a bucket.
