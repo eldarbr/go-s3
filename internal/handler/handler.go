@@ -20,6 +20,7 @@ type CacheImpl interface {
 
 type BusinessModule interface {
 	CreateBucket(ctx context.Context, bucket *model.Bucket) error
+	ListFiles(ctx context.Context, requesterUUID, bucketName string) ([]model.File, error)
 	UploadFile(ctx context.Context, request model.UploadFileRequest) (*uuid.UUID, error)
 	FetchFile(ctx context.Context, request model.FetchFileRequest) error
 }
@@ -100,34 +101,61 @@ func (apiHandler APIHandler) MiddlewareIPRateLimit(next httprouter.Handle) httpr
 	}
 }
 
-func (apiHandler APIHandler) MiddlewareAuthorizeAnyClaim(requestedRoles []string, theServiceName string,
+func (apiHandler APIHandler) MiddlewareAPIAuthorizeAnyClaim(requestedRoles []string, theServiceName string,
 	next httprouter.Handle) httprouter.Handle {
-	return func(respWriter http.ResponseWriter, request *http.Request, routerParams httprouter.Params) {
-		claims, err := apiHandler.jwtService.ValidateToken(request.Header.Get("Authorization"))
-		if err != nil {
+	return func(respWriter http.ResponseWriter, request *http.Request, params httprouter.Params) {
+		apiHandler.parseAuthToken(request.Header.Get("Authorization"), requestedRoles, theServiceName, next,
+			respWriter, request, params)
+	}
+}
+
+func (apiHandler APIHandler) MiddlewareFGWAuthorizeAnyClaim(requestedRoles []string, theServiceName string,
+	next httprouter.Handle) httprouter.Handle {
+	return func(respWriter http.ResponseWriter, request *http.Request, params httprouter.Params) {
+		cookieToken, cookieErr := request.Cookie("tokenid")
+		if cookieErr != nil {
 			writeJSONResponse(respWriter, model.ErrorResponse{Error: "unauthorized"}, http.StatusUnauthorized)
 
 			return
 		}
 
-		userRole := claims.FirstMatch(theServiceName, requestedRoles)
-
-		if userRole == "" {
-			writeJSONResponse(respWriter, model.ErrorResponse{Error: "forbidden"}, http.StatusForbidden)
-
-			return
-		}
-
-		nextCtx := context.WithValue(request.Context(), ctxKeyThisServiceUser, &auth.ThisServiceUser{
-			UserRole: userRole,
-			UserIdentificator: auth.UserIdentificator{
-				Username: claims.Username,
-				UserID:   claims.UserID,
-			},
-		})
-
-		next(respWriter, request.WithContext(nextCtx), routerParams)
+		apiHandler.parseAuthToken(cookieToken.Value, requestedRoles, theServiceName, next, respWriter, request, params)
 	}
+}
+
+func (apiHandler APIHandler) parseAuthToken(
+	token string,
+	requestedRoles []string,
+	theServiceName string,
+	next httprouter.Handle,
+	respWriter http.ResponseWriter,
+	request *http.Request,
+	params httprouter.Params,
+) {
+	claims, err := apiHandler.jwtService.ValidateToken(token)
+	if err != nil {
+		writeJSONResponse(respWriter, model.ErrorResponse{Error: "unauthorized"}, http.StatusUnauthorized)
+
+		return
+	}
+
+	userRole := claims.FirstMatch(theServiceName, requestedRoles)
+
+	if userRole == "" {
+		writeJSONResponse(respWriter, model.ErrorResponse{Error: "forbidden"}, http.StatusForbidden)
+
+		return
+	}
+
+	nextCtx := context.WithValue(request.Context(), ctxKeyThisServiceUser, &auth.ThisServiceUser{
+		UserRole: userRole,
+		UserIdentificator: auth.UserIdentificator{
+			Username: claims.Username,
+			UserID:   claims.UserID,
+		},
+	})
+
+	next(respWriter, request.WithContext(nextCtx), params)
 }
 
 func (apiHandler APIHandler) MiddlewareRateLimit(next httprouter.Handle) httprouter.Handle {
@@ -232,8 +260,8 @@ func (apiHandler APIHandler) UploadFile(respWriter http.ResponseWriter, rawReque
 		return
 	}
 
-	bucketName := p.ByName("bucket")
-	response := model.UploadFileResponse{}
+	bucketName := p.ByName("bucketName")
+	response := model.UploadFileResponse{Results: nil}
 
 	for {
 		part, partErr := mpReader.NextPart()
@@ -277,27 +305,41 @@ func (apiHandler APIHandler) UploadFile(respWriter http.ResponseWriter, rawReque
 	writeJSONResponse(respWriter, response, http.StatusOK)
 }
 
-func (apiHandler APIHandler) GetFile(respWriter http.ResponseWriter, rawRequest *http.Request, p httprouter.Params) {
+func (apiHandler APIHandler) GetFile(respWriter http.ResponseWriter, rawRequest *http.Request,
+	params httprouter.Params) {
 	var (
 		currentUserUUID *uuid.UUID
+		userToken       string
 	)
 
-	claims, err := apiHandler.jwtService.ValidateToken(rawRequest.Header.Get("Authorization"))
-	if err == nil {
-		uuid, uuidParseError := uuid.Parse(claims.UserID)
-		if uuidParseError != nil {
-			log.Println("bad uuid")
-			writeJSONResponse(respWriter, model.ErrorResponse{Error: "internal error"}, http.StatusInternalServerError)
-
-			return
+	{ // prioritize Authorization header over the session token.
+		userToken = rawRequest.Header.Get("Authorization")
+		if userToken == "" {
+			cookieToken, cookieErr := rawRequest.Cookie("tokenid")
+			if cookieErr == nil {
+				userToken = cookieToken.Value
+			}
 		}
-
-		currentUserUUID = &uuid
 	}
 
-	bucketName := p.ByName("bucket")
+	if userToken != "" {
+		claims, err := apiHandler.jwtService.ValidateToken(userToken)
+		if err == nil {
+			uuid, uuidParseError := uuid.Parse(claims.UserID)
+			if uuidParseError != nil {
+				log.Println("bad uuid")
+				writeJSONResponse(respWriter, model.ErrorResponse{Error: "internal error"}, http.StatusInternalServerError)
 
-	fileID, idParseErr := uuid.Parse(p.ByName("fileID"))
+				return
+			}
+
+			currentUserUUID = &uuid
+		}
+	}
+
+	bucketName := params.ByName("bucketName")
+
+	fileID, idParseErr := uuid.Parse(params.ByName("fileID"))
 	if idParseErr != nil {
 		log.Println("bad uuid")
 		writeJSONResponse(respWriter, model.ErrorResponse{Error: "bad request"}, http.StatusBadRequest)
@@ -313,11 +355,36 @@ func (apiHandler APIHandler) GetFile(respWriter http.ResponseWriter, rawRequest 
 		RawRequest:       rawRequest,
 	}
 
-	err = apiHandler.business.FetchFile(rawRequest.Context(), fetchReq)
+	err := apiHandler.business.FetchFile(rawRequest.Context(), fetchReq)
 	if err != nil {
 		log.Println(err.Error())
 		writeJSONResponse(respWriter, model.ErrorResponse{Error: err.Error()}, http.StatusBadRequest)
 
 		return
 	}
+}
+
+func (apiHandler APIHandler) ListFiles(respWriter http.ResponseWriter, rawRequest *http.Request,
+	params httprouter.Params) {
+	log.Printf("request ListFiles received")
+
+	currentUser, ctxFetchOk := rawRequest.Context().Value(ctxKeyThisServiceUser).(*auth.ThisServiceUser)
+	if !ctxFetchOk {
+		log.Println("bad ctx")
+		writeJSONResponse(respWriter, model.ErrorResponse{Error: "internal error"}, http.StatusInternalServerError)
+
+		return
+	}
+
+	files, err := apiHandler.business.ListFiles(rawRequest.Context(), currentUser.UserID, params.ByName("bucketName"))
+	if err != nil {
+		log.Println("Couldn't list files in the bucket", params.ByName("bucketName"), err.Error())
+		writeJSONResponse(respWriter, model.ErrorResponse{Error: "bad request"}, http.StatusBadRequest)
+
+		return
+	}
+
+	writeJSONResponse(respWriter, model.ListFilesResponse{
+		Files: files,
+	}, http.StatusOK)
 }

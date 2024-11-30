@@ -1,6 +1,7 @@
 package files
 
 import (
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -26,25 +27,35 @@ func (container Container) WriteFile(bucketID, fileID string, src io.Reader) (in
 
 	file, err := os.Create(fullPath)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("WriteFile os.Create %w", err)
 	}
 
 	defer file.Close()
 
 	err = file.Chmod(container.fileMode)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("WriteFile file.Chmod %w", err)
 	}
 
 	written, err := io.Copy(file, src)
 
-	return written, err
+	return written, fmt.Errorf("WriteFile io.Copy %w", err)
 }
 
 func (container Container) OpenFile(bucketID, fileID string) (io.ReadSeekCloser, error) {
-	return os.Open(path.Join(container.basePath, bucketID, fileID))
+	reader, err := os.Open(path.Join(container.basePath, bucketID, fileID))
+	if err != nil {
+		return nil, fmt.Errorf("OpenFile os.Open %w", err)
+	}
+
+	return reader, nil
 }
 
 func (container Container) CreateFolder(bucketID string) error {
-	return os.Mkdir(path.Join(container.basePath, bucketID), container.dirMode)
+	err := os.Mkdir(path.Join(container.basePath, bucketID), container.dirMode)
+	if err != nil {
+		return fmt.Errorf("CreateFolder os.Mkdir %w", err)
+	}
+
+	return nil
 }

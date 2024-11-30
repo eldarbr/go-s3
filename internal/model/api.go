@@ -53,3 +53,7 @@ type FetchFileRequest struct {
 	BucketName       string
 	FileID           uuid.UUID
 }
+
+type ListFilesResponse struct {
+	Files []File `json:"files"`
+}

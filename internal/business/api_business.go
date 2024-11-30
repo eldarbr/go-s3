@@ -57,8 +57,11 @@ func (business BusinessModule) CreateBucket(ctx context.Context, bucket *model.B
 	}
 
 	err = transaction.Commit(ctx)
+	if err != nil {
+		return fmt.Errorf("business.CreateBucket transaction.Commit: %w", err)
+	}
 
-	return err
+	return nil
 }
 
 func (business BusinessModule) UploadFile(ctx context.Context, request model.UploadFileRequest) (*uuid.UUID, error) {
@@ -132,12 +135,30 @@ func (business BusinessModule) FetchFile(ctx context.Context, request model.Fetc
 
 	file, fileErr := business.fileStorage.OpenFile(strconv.FormatInt(bucketInfo.ID, 10), fileInfo.ID.String())
 	if fileErr != nil {
-		return fileErr
+		return fmt.Errorf("business.FetchFile fileStorage.OpenFile: %w", fileErr)
 	}
 
 	defer file.Close()
 
 	http.ServeContent(request.RespWriter, request.RawRequest, fileInfo.Filename, fileInfo.CreatedTS, file)
 
-	return err
+	return nil
+}
+
+func (business BusinessModule) ListFiles(ctx context.Context, requesterUUID, bucketName string) ([]model.File, error) {
+	bucketInfo, err := storage.TableBuckets.GetByName(ctx, business.dbInstance.GetPool(), bucketName)
+	if err != nil {
+		return nil, fmt.Errorf("ListFiles couldn't get the bucket entry: %s, %w", bucketName, err)
+	}
+
+	if bucketInfo.OwnerID.String() != requesterUUID {
+		return nil, ErrNoPermission
+	}
+
+	files, err := storage.TableFiles.GetFilesOfABucket(ctx, business.dbInstance.GetPool(), bucketInfo.ID)
+	if err != nil {
+		return nil, fmt.Errorf("ListFiles couldn't list files of the bucket: %s, %w", bucketName, err)
+	}
+
+	return files, nil
 }

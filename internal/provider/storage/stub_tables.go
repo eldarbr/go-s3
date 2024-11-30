@@ -10,13 +10,15 @@ import (
 
 type StubTableFiles struct{}
 
+var ErrCtxDone = errors.New("ctx is done")
+
 func (StubTableFiles) Add(ctx context.Context, _ database.Querier, _ *model.File) error {
 	var nChan chan any
 
 	select {
 	case <-nChan:
 	case <-ctx.Done():
-		return errors.New("carleeme")
+		return ErrCtxDone
 	}
 
 	return nil
