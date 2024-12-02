@@ -178,13 +178,15 @@ INSERT INTO "files"
    "mime",
    "bucket_id",
    "access",
-   "size_bytes")
+   "size_bytes",
+   "filename_suffix")
 VALUES
-  ($1, $2, $3, $4, $5)
+  ($1, $2, $3, $4, $5, $6)
 RETURNING "id", "created_ts"
 	`
 
-	queryResult := querier.QueryRow(ctx, query, file.Filename, file.MIME, file.BucketID, file.Access, file.SizeBytes)
+	queryResult := querier.QueryRow(ctx, query, file.Filename, file.MIME, file.BucketID, file.Access,
+		file.SizeBytes, file.FilenameSuffix)
 	err := queryResult.Scan(&file.ID, &file.CreatedTS)
 
 	if err != nil && strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
@@ -214,12 +216,14 @@ INSERT INTO "files"
    "mime",
    "bucket_id",
    "access",
-   "size_bytes")
+   "size_bytes",
+   "filename_suffix")
 VALUES
-  ($1, $2, $3, $4, $5, $6)
+  ($1, $2, $3, $4, $5, $6, $7)
 	`
 
-	result, err := querier.Exec(ctx, query, file.ID, file.Filename, file.MIME, file.BucketID, file.Access, file.SizeBytes)
+	result, err := querier.Exec(ctx, query, file.ID, file.Filename, file.MIME, file.BucketID, file.Access,
+		file.SizeBytes, file.FilenameSuffix)
 	if err != nil && strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
 		return database.ErrUniqueKeyViolation
 	}
@@ -247,11 +251,13 @@ SET
   "mime" = $2,
   "bucket_id" = $3,
   "access" = $4,
-  "size_bytes" = $5
-WHERE "id" = $6
+  "size_bytes" = $5,
+  "filename_suffix" = $6
+WHERE "id" = $7
 	`
 
-	result, err := querier.Exec(ctx, query, file.Filename, file.MIME, file.BucketID, file.Access, file.SizeBytes, file.ID)
+	result, err := querier.Exec(ctx, query, file.Filename, file.MIME, file.BucketID, file.Access, file.SizeBytes,
+		file.FilenameSuffix, file.ID)
 	if err != nil && strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
 		return database.ErrUniqueKeyViolation
 	}
@@ -280,7 +286,8 @@ SELECT
   "created_ts",
   "bucket_id",
   "access",
-  "size_bytes"
+  "size_bytes",
+  "filename_suffix"
 FROM "files"
 WHERE "id" = $1
 	`
@@ -288,7 +295,8 @@ WHERE "id" = $1
 	var dst model.File
 
 	queryResult := querier.QueryRow(ctx, query, fileID)
-	err := queryResult.Scan(&dst.ID, &dst.Filename, &dst.MIME, &dst.CreatedTS, &dst.BucketID, &dst.Access, &dst.SizeBytes)
+	err := queryResult.Scan(&dst.ID, &dst.Filename, &dst.MIME, &dst.CreatedTS, &dst.BucketID, &dst.Access,
+		&dst.SizeBytes, &dst.FilenameSuffix)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, database.ErrNoRows
@@ -315,9 +323,11 @@ SELECT
   "created_ts",
   "bucket_id",
   "access",
-  "size_bytes"
+  "size_bytes",
+  "filename_suffix"
 FROM "files"
 WHERE "bucket_id" = $1
+ORDER BY "filename", "filename_suffix"
 	`
 
 	var (
@@ -333,7 +343,7 @@ WHERE "bucket_id" = $1
 
 	dst, err = pgx.CollectRows(queryResult, func(row pgx.CollectableRow) (model.File, error) {
 		err = row.Scan(&nextDst.ID, &nextDst.Filename, &nextDst.MIME, &nextDst.CreatedTS,
-			&nextDst.BucketID, &nextDst.Access, &nextDst.SizeBytes)
+			&nextDst.BucketID, &nextDst.Access, &nextDst.SizeBytes, &nextDst.FilenameSuffix)
 
 		return nextDst, err //nolint:wrapcheck // not an actual return
 	})
@@ -364,4 +374,64 @@ WHERE "id" = $1
 	}
 
 	return nil
+}
+
+func (implTableFiles) LockFilename(ctx context.Context, querier database.Querier, filename string) error {
+	if querier == nil {
+		return database.ErrNilArgument
+	}
+
+	query := `
+SELECT 1
+FROM "files"
+WHERE "filename" = $1
+FOR UPDATE
+	`
+
+	_, err := querier.Exec(ctx, query, filename)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return database.ErrNoRows
+	}
+
+	if err != nil {
+		return fmt.Errorf("implTableFiles.GetByID failed on SELECT: %w", err)
+	}
+
+	return nil
+}
+
+func (filesTable implTableFiles) PrepareNewFilenameSuffix(ctx context.Context, querier database.Querier,
+	filename string,
+) (int32, error) {
+	if querier == nil {
+		return 0, database.ErrNilArgument
+	}
+
+	// only makes sense if the querire is a tx.
+	err := filesTable.LockFilename(ctx, querier, filename)
+	if err != nil {
+		return 0, fmt.Errorf("implTableFiles.PrepareNewFilenameSuffix couldn't lock the filename: %w", err)
+	}
+
+	query := `
+SELECT COALESCE(MAX("filename_suffix"), 0) + 1
+FROM "files"
+WHERE "filename" = $1
+	`
+
+	var dst int32
+
+	queryResult := querier.QueryRow(ctx, query, filename)
+	err = queryResult.Scan(&dst)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, database.ErrNoRows
+	}
+
+	if err != nil {
+		return 0, fmt.Errorf("implTableFiles.PrepareNewFilenameSuffix failed on SELECT: %w", err)
+	}
+
+	return dst, nil
 }

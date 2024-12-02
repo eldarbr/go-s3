@@ -31,4 +31,6 @@ var TableFiles interface {
 	GetByID(ctx context.Context, querier database.Querier, fileID uuid.UUID) (*model.File, error)
 	GetFilesOfABucket(ctx context.Context, querier database.Querier, bucketID int64) ([]model.File, error)
 	DeleteByID(ctx context.Context, querier database.Querier, fileID uuid.UUID) error
+	LockFilename(ctx context.Context, querier database.Querier, filename string) error
+	PrepareNewFilenameSuffix(ctx context.Context, querier database.Querier, filename string) (int32, error)
 }

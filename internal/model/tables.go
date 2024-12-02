@@ -19,13 +19,14 @@ type Bucket struct {
 }
 
 type File struct {
-	CreatedTS time.Time
-	Filename  string
-	MIME      string
-	Access    FileAccess
-	ID        uuid.UUID
-	BucketID  int64
-	SizeBytes int64
+	CreatedTS      time.Time
+	Filename       string
+	MIME           string
+	Access         FileAccess
+	ID             uuid.UUID
+	BucketID       int64
+	SizeBytes      int64
+	FilenameSuffix int32
 }
 
 const (

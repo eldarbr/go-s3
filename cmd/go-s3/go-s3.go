@@ -34,10 +34,10 @@ type appConfig struct {
 
 const (
 	CacheAutoEvictPeriodSeconds = 120
-	ConfigPath                  = "secret/config.yaml"
-	DBMigrationsPath            = "file://./sql"
 	filesStorageDirMode         = 0700
 	filesStorageFileMode        = 0700
+	ConfigPath                  = "secret/config.yaml"
+	DBMigrationsPath            = "file://./sql"
 )
 
 // set defaults.

@@ -38,8 +38,11 @@ func (container Container) WriteFile(bucketID, fileID string, src io.Reader) (in
 	}
 
 	written, err := io.Copy(file, src)
+	if err != nil {
+		return written, fmt.Errorf("WriteFile io.Copy %w", err)
+	}
 
-	return written, fmt.Errorf("WriteFile io.Copy %w", err)
+	return written, nil
 }
 
 func (container Container) OpenFile(bucketID, fileID string) (io.ReadSeekCloser, error) {

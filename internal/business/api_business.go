@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/eldarbr/go-auth/pkg/database"
 	"github.com/eldarbr/go-s3/internal/model"
@@ -41,7 +42,7 @@ func NewBusinessModule(dbInstance *database.Database, fileStorage FileStorage) *
 func (business BusinessModule) CreateBucket(ctx context.Context, bucket *model.Bucket) error {
 	transaction, err := business.dbInstance.GetPool().Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("business.UploadFile begin transaction: %w", err)
+		return fmt.Errorf("business.CreateBucket begin transaction: %w", err)
 	}
 
 	defer transaction.Rollback(ctx) //nolint:errcheck // won't check
@@ -71,7 +72,7 @@ func (business BusinessModule) UploadFile(ctx context.Context, request model.Upl
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("business.TableBuckets.GetByName: %w", err)
+		return nil, fmt.Errorf("business.UploadFile business.TableBuckets.GetByName: %w", err)
 	}
 
 	if bucketInfo.OwnerID != request.RequesterUUID {
@@ -83,24 +84,43 @@ func (business BusinessModule) UploadFile(ctx context.Context, request model.Upl
 		return nil, fmt.Errorf("business.uuid.NewRandom: %w", uuidErr)
 	}
 
-	request.File.ID = newFileUUID
-	request.File.BucketID = bucketInfo.ID
-
-	bytesWritten, err := business.fileStorage.WriteFile(strconv.FormatInt(request.BucketID, 10),
-		request.File.ID.String(),
+	bytesWritten, err := business.fileStorage.WriteFile(strconv.FormatInt(bucketInfo.ID, 10),
+		newFileUUID.String(),
 		request.FileContent)
 	if err != nil {
 		return nil, fmt.Errorf("business.UploadFile fileStorage.WriteFile: %w", err)
 	}
 
+	transaction, err := business.dbInstance.GetPool().Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("business.UploadFile begin transaction: %w", err)
+	}
+
+	defer transaction.Rollback(ctx) //nolint:errcheck // won't check
+
+	newSuffix, err := storage.TableFiles.PrepareNewFilenameSuffix(ctx, transaction, request.Filename)
+	if err != nil {
+		return nil, fmt.Errorf("business.UploadFile storage.TableFiles.PrepareNewFilenameSuffix: %w", err)
+	}
+
+	request.File.ID = newFileUUID
+	request.File.BucketID = bucketInfo.ID
+	request.FilenameSuffix = newSuffix
 	request.File.SizeBytes = bytesWritten
 
-	err = storage.TableFiles.InsertID(ctx, business.dbInstance.GetPool(), &request.File)
+	err = storage.TableFiles.InsertID(ctx, transaction, &request.File)
 	if err != nil {
 		return nil, fmt.Errorf("business.UploadFile TableFiles.Add: %w", err)
 	}
 
-	return &newFileUUID, nil
+	err = transaction.Commit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("business.CreateBucket transaction.Commit: %w", err)
+	}
+
+	createdID := request.File.ID
+
+	return &createdID, nil
 }
 
 func (business BusinessModule) FetchFile(ctx context.Context, request model.FetchFileRequest) error {
@@ -158,6 +178,29 @@ func (business BusinessModule) ListFiles(ctx context.Context, requesterUUID, buc
 	files, err := storage.TableFiles.GetFilesOfABucket(ctx, business.dbInstance.GetPool(), bucketInfo.ID)
 	if err != nil {
 		return nil, fmt.Errorf("ListFiles couldn't list files of the bucket: %s, %w", bucketName, err)
+	}
+
+	for i := range files {
+		if files[i].FilenameSuffix != 0 {
+			var builder strings.Builder
+
+			lastDotIdx := strings.LastIndex(files[i].Filename, ".")
+
+			if lastDotIdx != -1 {
+				builder.WriteString(files[i].Filename[0:lastDotIdx])
+			} else {
+				builder.WriteString(files[i].Filename)
+			}
+
+			builder.WriteString("_")
+			builder.WriteString(strconv.FormatInt(int64(files[i].FilenameSuffix), 10))
+
+			if lastDotIdx != -1 {
+				builder.WriteString(files[i].Filename[lastDotIdx:])
+			}
+
+			files[i].Filename = builder.String()
+		}
 	}
 
 	return files, nil
