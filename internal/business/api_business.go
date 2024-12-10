@@ -30,6 +30,7 @@ type FileStorage interface {
 	CreateFolder(bucketID string) error
 	OpenFile(bucketID, fileID string) (io.ReadSeekCloser, error)
 	WriteFile(bucketID, fileID string, src io.Reader) (int64, error)
+	DeleteFile(bucketID, fileID string) error
 }
 
 func NewBusinessModule(dbInstance *database.Database, fileStorage FileStorage) *BusinessModule {
@@ -165,13 +166,14 @@ func (business BusinessModule) FetchFile(ctx context.Context, request model.Fetc
 	return nil
 }
 
-func (business BusinessModule) ListFiles(ctx context.Context, requesterUUID, bucketName string) ([]model.File, error) {
+func (business BusinessModule) ListFiles(ctx context.Context, requesterUUID uuid.UUID, bucketName string,
+) ([]model.File, error) {
 	bucketInfo, err := storage.TableBuckets.GetByName(ctx, business.dbInstance.GetPool(), bucketName)
 	if err != nil {
 		return nil, fmt.Errorf("ListFiles couldn't get the bucket entry: %s, %w", bucketName, err)
 	}
 
-	if bucketInfo.OwnerID.String() != requesterUUID {
+	if bucketInfo.OwnerID != requesterUUID {
 		return nil, ErrNoPermission
 	}
 
@@ -180,28 +182,108 @@ func (business BusinessModule) ListFiles(ctx context.Context, requesterUUID, buc
 		return nil, fmt.Errorf("ListFiles couldn't list files of the bucket: %s, %w", bucketName, err)
 	}
 
-	for i := range files {
-		if files[i].FilenameSuffix != 0 {
+	for fileIndex := range files {
+		if files[fileIndex].FilenameSuffix != 0 {
 			var builder strings.Builder
 
-			lastDotIdx := strings.LastIndex(files[i].Filename, ".")
+			lastDotIdx := strings.LastIndex(files[fileIndex].Filename, ".")
 
 			if lastDotIdx != -1 {
-				builder.WriteString(files[i].Filename[0:lastDotIdx])
+				builder.WriteString(files[fileIndex].Filename[0:lastDotIdx])
 			} else {
-				builder.WriteString(files[i].Filename)
+				builder.WriteString(files[fileIndex].Filename)
 			}
 
 			builder.WriteString("_")
-			builder.WriteString(strconv.FormatInt(int64(files[i].FilenameSuffix), 10))
+			builder.WriteString(strconv.FormatInt(int64(files[fileIndex].FilenameSuffix), 10))
 
 			if lastDotIdx != -1 {
-				builder.WriteString(files[i].Filename[lastDotIdx:])
+				builder.WriteString(files[fileIndex].Filename[lastDotIdx:])
 			}
 
-			files[i].Filename = builder.String()
+			files[fileIndex].Filename = builder.String()
 		}
 	}
 
 	return files, nil
+}
+
+func (business BusinessModule) EditFile(ctx context.Context, request model.File, bucketName string,
+	requesterID uuid.UUID,
+) error {
+	dbFile, err := storage.TableFiles.GetByID(ctx, business.dbInstance.GetPool(), request.ID)
+	if err != nil {
+		return fmt.Errorf("EditFile couldn't get the file entry: %s, %w", request.ID.String(), err)
+	}
+
+	bucketInfo, err := storage.TableBuckets.GetByName(ctx, business.dbInstance.GetPool(), bucketName)
+	if err != nil {
+		return fmt.Errorf("EditFile couldn't get the bucket entry: %s, %w", bucketName, err)
+	}
+
+	// check if actually the file is in the bucket.
+	if dbFile.BucketID != bucketInfo.ID {
+		return ErrBadRequest
+	}
+
+	// check if the user has permissions to edit.
+	if bucketInfo.OwnerID != requesterID {
+		return ErrNoPermission
+	}
+
+	if request.Filename != "" {
+		dbFile.Filename = request.Filename
+	}
+
+	if request.Access != "" {
+		dbFile.Access = request.Access
+	}
+
+	err = storage.TableFiles.UpdateByID(ctx, business.dbInstance.GetPool(), dbFile)
+	if err != nil {
+		return fmt.Errorf("EditFile couldn't update the file entry: %w", err)
+	}
+
+	return nil
+}
+
+func (business BusinessModule) DeleteFile(ctx context.Context, fileID uuid.UUID, bucketName string,
+	requesterID uuid.UUID,
+) error {
+	dbFile, err := storage.TableFiles.GetByID(ctx, business.dbInstance.GetPool(), fileID)
+	if err != nil {
+		return fmt.Errorf("DeleteFile couldn't get the file entry: %s, %w", fileID.String(), err)
+	}
+
+	bucketInfo, err := storage.TableBuckets.GetByName(ctx, business.dbInstance.GetPool(), bucketName)
+	if err != nil {
+		return fmt.Errorf("DeleteFile couldn't get the bucket entry: %s, %w", bucketName, err)
+	}
+
+	// check if actually the file is in the bucket.
+	if dbFile.BucketID != bucketInfo.ID {
+		return ErrBadRequest
+	}
+
+	// check if the user has permissions to edit.
+	if bucketInfo.OwnerID != requesterID {
+		return ErrNoPermission
+	}
+
+	err = storage.TableFiles.MarkDeleted(ctx, business.dbInstance.GetPool(), fileID)
+	if err != nil {
+		return fmt.Errorf("DeleteFile couldn't mark the db entry: %w", err)
+	}
+
+	err = business.fileStorage.DeleteFile(strconv.FormatInt(bucketInfo.ID, 10), fileID.String())
+	if err != nil {
+		return fmt.Errorf("DeleteFile couldn't delete the db file entry: %w", err)
+	}
+
+	err = storage.TableFiles.DeleteByID(ctx, business.dbInstance.GetPool(), fileID)
+	if err != nil {
+		return fmt.Errorf("DeleteFile couldn't delete the db file entry: %w", err)
+	}
+
+	return nil
 }

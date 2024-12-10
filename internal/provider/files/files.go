@@ -62,3 +62,12 @@ func (container Container) CreateFolder(bucketID string) error {
 
 	return nil
 }
+
+func (container Container) DeleteFile(bucketID, fileID string) error {
+	err := os.Remove(path.Join(container.basePath, bucketID, fileID))
+	if err != nil {
+		return fmt.Errorf("DeleteFile os.Remove %w", err)
+	}
+
+	return nil
+}

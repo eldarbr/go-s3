@@ -8,6 +8,7 @@ import (
 
 	"github.com/eldarbr/go-s3/internal/myerrors"
 	"github.com/golang-jwt/jwt"
+	"github.com/google/uuid"
 )
 
 var (
@@ -25,18 +26,18 @@ type ClaimUserRole struct {
 }
 
 type CustomClaims struct {
-	UserIdentificator
 	Roles []ClaimUserRole `json:"roles"`
+	UserIdentificator
 }
 
 type UserIdentificator struct {
-	Username string `json:"username"`
-	UserID   string `json:"userId"`
+	Username string    `json:"username"`
+	UserID   uuid.UUID `json:"userId"`
 }
 
 type ThisServiceUser struct {
-	UserIdentificator
 	UserRole string
+	UserIdentificator
 }
 
 type myCompletelaims struct {

@@ -63,6 +63,7 @@ func main() {
 		log.Println("Starting pprof http")
 
 		go func() {
+			//nolint:gosec // not an actual server.
 			log.Println(http.ListenAndServe(conf.PprofServingURI, server.NewPprofServemux()))
 		}()
 	}

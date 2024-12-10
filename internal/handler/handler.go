@@ -20,9 +20,11 @@ type CacheImpl interface {
 
 type BusinessModule interface {
 	CreateBucket(ctx context.Context, bucket *model.Bucket) error
-	ListFiles(ctx context.Context, requesterUUID, bucketName string) ([]model.File, error)
+	ListFiles(ctx context.Context, requesterUUID uuid.UUID, bucketName string) ([]model.File, error)
 	UploadFile(ctx context.Context, request model.UploadFileRequest) (*uuid.UUID, error)
 	FetchFile(ctx context.Context, request model.FetchFileRequest) error
+	EditFile(ctx context.Context, request model.File, bucketName string, requesterID uuid.UUID) error
+	DeleteFile(ctx context.Context, fileID uuid.UUID, bucketName string, requesterID uuid.UUID) error
 }
 
 type APIHandler struct {
@@ -102,7 +104,8 @@ func (apiHandler APIHandler) MiddlewareIPRateLimit(next httprouter.Handle) httpr
 }
 
 func (apiHandler APIHandler) MiddlewareAPIAuthorizeAnyClaim(requestedRoles []string, theServiceName string,
-	next httprouter.Handle) httprouter.Handle {
+	next httprouter.Handle,
+) httprouter.Handle {
 	return func(respWriter http.ResponseWriter, request *http.Request, params httprouter.Params) {
 		apiHandler.parseAuthToken(request.Header.Get("Authorization"), requestedRoles, theServiceName, next,
 			respWriter, request, params)
@@ -110,7 +113,8 @@ func (apiHandler APIHandler) MiddlewareAPIAuthorizeAnyClaim(requestedRoles []str
 }
 
 func (apiHandler APIHandler) MiddlewareFGWAuthorizeAnyClaim(requestedRoles []string, theServiceName string,
-	next httprouter.Handle) httprouter.Handle {
+	next httprouter.Handle,
+) httprouter.Handle {
 	return func(respWriter http.ResponseWriter, request *http.Request, params httprouter.Params) {
 		cookieToken, cookieErr := request.Cookie("tokenid")
 		if cookieErr != nil {
@@ -179,8 +183,8 @@ func (apiHandler APIHandler) MiddlewareRateLimit(next httprouter.Handle) httprou
 	}
 }
 
-func (apiHandler APIHandler) CreateBucket(respWriter http.ResponseWriter, rawRequest *http.Request,
-	_ httprouter.Params) {
+func (apiHandler APIHandler) CreateBucket(respWriter http.ResponseWriter, rawRequest *http.Request, _ httprouter.Params,
+) {
 	log.Printf("request CreateBucket received")
 
 	var bucketRequest model.CreateBucketRequest
@@ -193,20 +197,10 @@ func (apiHandler APIHandler) CreateBucket(respWriter http.ResponseWriter, rawReq
 		return
 	}
 
-	var (
-		currentUserUUID uuid.UUID
-		uuidParseError  error
-	)
-
 	currentUser, ctxFetchOk := rawRequest.Context().Value(ctxKeyThisServiceUser).(*auth.ThisServiceUser)
 
 	if !ctxFetchOk {
 		log.Println("bad ctx")
-		writeJSONResponse(respWriter, model.ErrorResponse{Error: "internal error"}, http.StatusInternalServerError)
-
-		return
-	} else if currentUserUUID, uuidParseError = uuid.Parse(currentUser.UserID); uuidParseError != nil {
-		log.Println("bad uuid")
 		writeJSONResponse(respWriter, model.ErrorResponse{Error: "internal error"}, http.StatusInternalServerError)
 
 		return
@@ -215,7 +209,7 @@ func (apiHandler APIHandler) CreateBucket(respWriter http.ResponseWriter, rawReq
 	bucket := &model.Bucket{ //nolint:exhaustruct // the rest gets filled in the business.
 		Name:         bucketRequest.Name,
 		Availability: bucketRequest.Availability,
-		OwnerID:      currentUserUUID,
+		OwnerID:      currentUser.UserID,
 	}
 
 	err = apiHandler.business.CreateBucket(rawRequest.Context(), bucket)
@@ -232,7 +226,9 @@ func (apiHandler APIHandler) CreateBucket(respWriter http.ResponseWriter, rawReq
 	}, http.StatusOK)
 }
 
-func (apiHandler APIHandler) UploadFile(respWriter http.ResponseWriter, rawRequest *http.Request, p httprouter.Params) {
+func (apiHandler APIHandler) UploadFile(respWriter http.ResponseWriter, rawRequest *http.Request,
+	params httprouter.Params,
+) {
 	mpReader, err := rawRequest.MultipartReader()
 	if err != nil {
 		log.Println("reader", err.Error())
@@ -241,26 +237,15 @@ func (apiHandler APIHandler) UploadFile(respWriter http.ResponseWriter, rawReque
 		return
 	}
 
-	var (
-		currentUserUUID uuid.UUID
-		uuidParseError  error
-	)
-
 	currentUser, ctxFetchOk := rawRequest.Context().Value(ctxKeyThisServiceUser).(*auth.ThisServiceUser)
-
 	if !ctxFetchOk {
 		log.Println("bad ctx")
 		writeJSONResponse(respWriter, model.ErrorResponse{Error: "internal error"}, http.StatusInternalServerError)
 
 		return
-	} else if currentUserUUID, uuidParseError = uuid.Parse(currentUser.UserID); uuidParseError != nil {
-		log.Println("bad uuid")
-		writeJSONResponse(respWriter, model.ErrorResponse{Error: "internal error"}, http.StatusInternalServerError)
-
-		return
 	}
 
-	bucketName := p.ByName("bucketName")
+	bucketName := params.ByName("bucketName")
 	response := model.UploadFileResponse{Results: nil}
 
 	for {
@@ -278,7 +263,7 @@ func (apiHandler APIHandler) UploadFile(respWriter http.ResponseWriter, rawReque
 
 		newFileUUID, saveErr := apiHandler.business.UploadFile(rawRequest.Context(), model.UploadFileRequest{
 			FileContent:   part,
-			RequesterUUID: currentUserUUID,
+			RequesterUUID: currentUser.UserID,
 			BucketName:    bucketName,
 			File: model.File{
 				Filename: part.FileName(),
@@ -325,14 +310,7 @@ func (apiHandler APIHandler) GetFile(respWriter http.ResponseWriter, rawRequest 
 	if userToken != "" {
 		claims, err := apiHandler.jwtService.ValidateToken(userToken)
 		if err == nil {
-			uuid, uuidParseError := uuid.Parse(claims.UserID)
-			if uuidParseError != nil {
-				log.Println("bad uuid")
-				writeJSONResponse(respWriter, model.ErrorResponse{Error: "internal error"}, http.StatusInternalServerError)
-
-				return
-			}
-
+			uuid := claims.UserID
 			currentUserUUID = &uuid
 		}
 	}
@@ -358,14 +336,15 @@ func (apiHandler APIHandler) GetFile(respWriter http.ResponseWriter, rawRequest 
 	err := apiHandler.business.FetchFile(rawRequest.Context(), fetchReq)
 	if err != nil {
 		log.Println(err.Error())
-		writeJSONResponse(respWriter, model.ErrorResponse{Error: err.Error()}, http.StatusBadRequest)
+		writeJSONResponse(respWriter, model.ErrorResponse{Error: "bad request"}, http.StatusBadRequest)
 
 		return
 	}
 }
 
 func (apiHandler APIHandler) ListFiles(respWriter http.ResponseWriter, rawRequest *http.Request,
-	params httprouter.Params) {
+	params httprouter.Params,
+) {
 	log.Printf("request ListFiles received")
 
 	currentUser, ctxFetchOk := rawRequest.Context().Value(ctxKeyThisServiceUser).(*auth.ThisServiceUser)
@@ -387,4 +366,82 @@ func (apiHandler APIHandler) ListFiles(respWriter http.ResponseWriter, rawReques
 	writeJSONResponse(respWriter, model.ListFilesResponse{
 		Files: files,
 	}, http.StatusOK)
+}
+
+func (apiHandler APIHandler) EditFile(respWriter http.ResponseWriter, request *http.Request, params httprouter.Params) {
+	log.Printf("request EditFile received")
+
+	var fileRequest model.EditFileRequest
+
+	// Decode the request body.
+	err := json.NewDecoder(request.Body).Decode(&fileRequest)
+	if err != nil {
+		writeJSONResponse(respWriter, model.ErrorResponse{Error: "bad request"}, http.StatusBadRequest)
+
+		return
+	}
+
+	currentUser, ctxFetchOk := request.Context().Value(ctxKeyThisServiceUser).(*auth.ThisServiceUser)
+	if !ctxFetchOk {
+		log.Println("bad ctx")
+		writeJSONResponse(respWriter, model.ErrorResponse{Error: "internal error"}, http.StatusInternalServerError)
+
+		return
+	}
+
+	fileID, idParseErr := uuid.Parse(params.ByName("fileID"))
+	if idParseErr != nil {
+		writeJSONResponse(respWriter, model.ErrorResponse{Error: "bad request"}, http.StatusBadRequest)
+
+		return
+	}
+
+	file := model.File{
+		ID:       fileID,
+		Filename: fileRequest.Filename,
+	}
+
+	if fileRequest.Access != nil {
+		file.Access = *fileRequest.Access
+	}
+
+	err = apiHandler.business.EditFile(request.Context(), file, params.ByName("bucketName"), currentUser.UserID)
+	if err != nil {
+		log.Println("Couldn't edit the file: ", err.Error())
+		writeJSONResponse(respWriter, model.ErrorResponse{Error: "bad request"}, http.StatusBadRequest)
+
+		return
+	}
+
+	writeJSONResponse(respWriter, model.ErrorResponse{Error: ""}, http.StatusOK)
+}
+
+func (apiHandler APIHandler) DeleteFile(respWriter http.ResponseWriter, request *http.Request, params httprouter.Params,
+) {
+	log.Printf("request DeleteFile received")
+
+	currentUser, ctxFetchOk := request.Context().Value(ctxKeyThisServiceUser).(*auth.ThisServiceUser)
+	if !ctxFetchOk {
+		log.Println("bad ctx")
+		writeJSONResponse(respWriter, model.ErrorResponse{Error: "internal error"}, http.StatusInternalServerError)
+
+		return
+	}
+
+	fileID, idParseErr := uuid.Parse(params.ByName("fileID"))
+	if idParseErr != nil {
+		writeJSONResponse(respWriter, model.ErrorResponse{Error: "bad request"}, http.StatusBadRequest)
+
+		return
+	}
+
+	err := apiHandler.business.DeleteFile(request.Context(), fileID, params.ByName("bucketName"), currentUser.UserID)
+	if err != nil {
+		log.Println("Couldn't delete the file: ", err.Error())
+		writeJSONResponse(respWriter, model.ErrorResponse{Error: "bad request"}, http.StatusBadRequest)
+
+		return
+	}
+
+	writeJSONResponse(respWriter, model.ErrorResponse{Error: ""}, http.StatusOK)
 }

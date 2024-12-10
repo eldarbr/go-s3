@@ -253,7 +253,7 @@ SET
   "access" = $4,
   "size_bytes" = $5,
   "filename_suffix" = $6
-WHERE "id" = $7
+WHERE "id" = $7 AND "is_deleted" = FALSE
 	`
 
 	result, err := querier.Exec(ctx, query, file.Filename, file.MIME, file.BucketID, file.Access, file.SizeBytes,
@@ -289,7 +289,7 @@ SELECT
   "size_bytes",
   "filename_suffix"
 FROM "files"
-WHERE "id" = $1
+WHERE "id" = $1 AND "is_deleted" = FALSE
 	`
 
 	var dst model.File
@@ -326,7 +326,7 @@ SELECT
   "size_bytes",
   "filename_suffix"
 FROM "files"
-WHERE "bucket_id" = $1
+WHERE "bucket_id" = $1 AND "is_deleted" = FALSE
 ORDER BY "filename", "filename_suffix"
 	`
 
@@ -384,7 +384,7 @@ func (implTableFiles) LockFilename(ctx context.Context, querier database.Querier
 	query := `
 SELECT 1
 FROM "files"
-WHERE "filename" = $1
+WHERE "filename" = $1 AND "is_deleted" = FALSE
 FOR UPDATE
 	`
 
@@ -415,7 +415,7 @@ func (filesTable implTableFiles) PrepareNewFilenameSuffix(ctx context.Context, q
 	}
 
 	query := `
-SELECT COALESCE(MAX("filename_suffix"), 0) + 1
+SELECT COALESCE(MAX("filename_suffix"), -1) + 1
 FROM "files"
 WHERE "filename" = $1
 	`
@@ -434,4 +434,28 @@ WHERE "filename" = $1
 	}
 
 	return dst, nil
+}
+
+func (implTableFiles) MarkDeleted(ctx context.Context, querier database.Querier, fileID uuid.UUID) error {
+	if querier == nil {
+		return database.ErrNilArgument
+	}
+
+	query := `
+UPDATE "files"
+SET
+  "is_deleted" = TRUE
+WHERE "id" = $1
+	`
+
+	result, err := querier.Exec(ctx, query, fileID)
+	if err != nil {
+		return fmt.Errorf("implTableFiles.MarkDeleted failed on UPDATE: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return database.ErrNoRows
+	}
+
+	return nil
 }

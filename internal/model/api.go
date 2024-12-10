@@ -57,3 +57,8 @@ type FetchFileRequest struct {
 type ListFilesResponse struct {
 	Files []File `json:"files"`
 }
+
+type EditFileRequest struct {
+	Access   *FileAccess `json:"access"`
+	Filename string      `json:"filename"`
+}

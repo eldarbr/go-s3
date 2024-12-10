@@ -33,4 +33,5 @@ var TableFiles interface {
 	DeleteByID(ctx context.Context, querier database.Querier, fileID uuid.UUID) error
 	LockFilename(ctx context.Context, querier database.Querier, filename string) error
 	PrepareNewFilenameSuffix(ctx context.Context, querier database.Querier, filename string) (int32, error)
+	MarkDeleted(ctx context.Context, querier database.Querier, fileID uuid.UUID) error
 }

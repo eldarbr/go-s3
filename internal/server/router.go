@@ -20,6 +20,8 @@ type APIHandlingModule interface {
 
 	CreateBucket(w http.ResponseWriter, r *http.Request, p httprouter.Params)
 	ListFiles(w http.ResponseWriter, r *http.Request, p httprouter.Params)
+	EditFile(w http.ResponseWriter, r *http.Request, p httprouter.Params)
+	DeleteFile(w http.ResponseWriter, r *http.Request, p httprouter.Params)
 	UploadFile(w http.ResponseWriter, r *http.Request, p httprouter.Params)
 	GetFile(w http.ResponseWriter, r *http.Request, p httprouter.Params)
 }
@@ -57,6 +59,18 @@ func NewRouter(apiHandler APIHandlingModule) http.Handler {
 		apiHandler, apiHandler.ListFiles, apiHandler.MiddlewareAPIAuthorizeAnyClaim))
 	handler.GET("/fgw/manage/buckets/:bucketName/files", constructAdminOrRootMiddleware(
 		apiHandler, apiHandler.ListFiles, apiHandler.MiddlewareFGWAuthorizeAnyClaim))
+
+	// edit a file.
+	handler.PATCH("/api/manage/buckets/:bucketName/:fileID", constructAdminOrRootMiddleware(
+		apiHandler, apiHandler.EditFile, apiHandler.MiddlewareAPIAuthorizeAnyClaim))
+	handler.PATCH("/fgw/manage/buckets/:bucketName/:fileID", constructAdminOrRootMiddleware(
+		apiHandler, apiHandler.EditFile, apiHandler.MiddlewareFGWAuthorizeAnyClaim))
+
+	// delete a file.
+	handler.DELETE("/api/manage/buckets/:bucketName/:fileID", constructAdminOrRootMiddleware(
+		apiHandler, apiHandler.DeleteFile, apiHandler.MiddlewareAPIAuthorizeAnyClaim))
+	handler.DELETE("/fgw/manage/buckets/:bucketName/:fileID", constructAdminOrRootMiddleware(
+		apiHandler, apiHandler.DeleteFile, apiHandler.MiddlewareFGWAuthorizeAnyClaim))
 
 	// upload a file.
 	handler.POST("/api/buckets/:bucketName", constructAdminOrRootMiddleware(
