@@ -19,14 +19,14 @@ type Bucket struct {
 }
 
 type File struct {
-	CreatedTS      time.Time
-	Filename       string
-	MIME           string
-	Access         FileAccess
-	ID             uuid.UUID
-	BucketID       int64
-	SizeBytes      int64
-	FilenameSuffix int32
+	CreatedTS      time.Time  `json:"createdTs"`
+	Filename       string     `json:"filename"`
+	MIME           string     `json:"mime"`
+	Access         FileAccess `json:"access"`
+	BucketID       int64      `json:"-"`
+	SizeBytes      int64      `json:"sizeBytes"`
+	FilenameSuffix int32      `json:"-"`
+	ID             uuid.UUID  `json:"id"`
 }
 
 const (

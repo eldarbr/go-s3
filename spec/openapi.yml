@@ -1,0 +1,370 @@
+openapi: 3.0.3
+info:
+  title: go-s3
+  description: Create, Manage, Access your files
+  version: 1.0.0
+tags:
+  - name: Common
+
+  - name: Frontend Gateway
+    description: Cookie user authorization
+  
+  - name: API
+    description: Header user authorization
+paths:
+
+  /buckets/{bucketName}/{fileID}:
+    get:
+      tags:
+        - Common
+      parameters:
+        - name: bucketName
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fileID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: the file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetFileResp'
+
+  /fgw/manage/buckets:
+    post:
+      tags:
+        - Frontend Gateway
+      summary: create a bucket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBucketReq'
+      responses:
+        '200':
+          description: bucket is created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateBucketResp'
+  
+  /api/manage/buckets:
+    post:
+      tags:
+        - API
+      summary: create a bucket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBucketReq'
+      responses:
+        '200':
+          description: bucket is created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateBucketResp'
+
+  /fgw/manage/buckets/{bucketName}:
+    post:
+      tags:
+        - Frontend Gateway
+      summary: upload a file
+      parameters:
+        - in: path
+          name: bucketName
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files_multipart:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        '200':
+          description: file is uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadFileResp'
+
+  /api/manage/buckets/{bucketName}:
+    post:
+      tags:
+        - API
+      summary: upload a file
+      parameters:
+        - in: path
+          name: bucketName
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files_multipart:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        '200':
+          description: file is uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadFileResp'
+
+  /fgw/manage/buckets/{bucketName}/files:
+    get:
+      tags:
+        - Frontend Gateway
+      summary: list files in a bucket
+      parameters:
+        - name: bucketName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: list of the files
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListFilesResp'
+  
+  /api/manage/buckets/{bucketName}/files:
+    get:
+      tags:
+        - API
+      summary: list files in a bucket
+      parameters:
+        - name: bucketName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: list of the files
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListFilesResp'
+
+  /fgw/manage/buckets/{bucketName}/{fileID}:
+    patch:
+      tags:
+        - Frontend Gateway
+      summary: edit a file
+      parameters:
+        - name: bucketName
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fileID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditFileReq'
+      responses:
+        '200':
+          description: operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EditFileResp'
+    delete:
+      tags:
+        - Frontend Gateway
+      summary: delete a file
+      parameters:
+        - name: bucketName
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fileID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteFileResp'
+
+  /api/manage/buckets/{bucketName}/{fileID}:
+    patch:
+      tags:
+        - API
+      summary: edit a file
+      parameters:
+        - name: bucketName
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fileID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditFileReq'
+      responses:
+        '200':
+          description: operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EditFileResp'
+    delete:
+      tags:
+        - API
+      summary: delete a file
+      parameters:
+        - name: bucketName
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fileID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteFileResp'
+
+components:
+  schemas:
+
+    CreateBucketReq:
+      type: object
+      properties:
+        name:
+          type: string
+        availability:
+          type: string
+          enum: [closed, accessible]
+    
+    EditFileReq:
+      type: object
+      properties:
+        name:
+          type: string
+        access:
+          type: string
+          enum: [private, public]
+
+    GetFileResp:
+      type: string
+      format: binary
+
+    CreateBucketResp:
+      type: object
+      properties:
+        name:
+          type: string
+        sizeQuota:
+          type: number
+
+    UploadFileResp:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              error:
+                type: string
+              result:
+                type: string
+                enum: [ok, error]
+                
+    ListFilesResp:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              filename:
+                type: string
+              mime:
+                type: string
+              access:
+                type: string
+                enum: [public, private]
+              sizeBytes:
+                type: integer
+              createdTs:
+                type: string
+                format: time
+    
+    EditFileResp:
+      type: object
+      properties:
+        error:
+          type: string
+    
+    DeleteFileResp:
+      type: object
+      properties:
+        error:
+          type: string

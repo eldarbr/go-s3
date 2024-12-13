@@ -73,9 +73,9 @@ func NewRouter(apiHandler APIHandlingModule) http.Handler {
 		apiHandler, apiHandler.DeleteFile, apiHandler.MiddlewareFGWAuthorizeAnyClaim))
 
 	// upload a file.
-	handler.POST("/api/buckets/:bucketName", constructAdminOrRootMiddleware(
+	handler.POST("/api/manage/buckets/:bucketName", constructAdminOrRootMiddleware(
 		apiHandler, apiHandler.UploadFile, apiHandler.MiddlewareAPIAuthorizeAnyClaim))
-	handler.POST("/fgw/buckets/:bucketName", constructAdminOrRootMiddleware(
+	handler.POST("/fgw/manage/buckets/:bucketName", constructAdminOrRootMiddleware(
 		apiHandler, apiHandler.UploadFile, apiHandler.MiddlewareFGWAuthorizeAnyClaim))
 
 	// download a file.
